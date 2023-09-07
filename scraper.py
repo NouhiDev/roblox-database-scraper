@@ -25,13 +25,13 @@ _VERSION = "0.0.5"
 # https://games.roblox.com/v1/games/votes?universeIds=
 # https://games.roblox.com/v1/games?universeIds=
 
-BASE_URL = "https://games.roblox.com/v1/games/votes?universeIds="
+BASE_URL = "https://games.roblox.com/v1/games?universeIds="
 
 # UIDs/Url (Default: 100)
 batch_size = 100
 
 # Concurrent Requests (Default: 100)
-concurrent_requests = 1000
+concurrent_requests = 100
 
 # UID to stop scraping at (Default: 5060800000)
 END_ID = 5060800000
@@ -63,7 +63,7 @@ PERFORMANCE_MODE = False
 # ------------- [ Filter ] --------------
 
 # Whether to apply filters or not
-ENABLE_FILTER = False
+ENABLE_FILTER = True
 
 # Only accept games with any of the desired strings in their name
 DESIRED_STRINGS = []
@@ -275,7 +275,19 @@ async def fetch_games(session, batch_start, batch_end):
 
             await asyncio.sleep(RETRY_DELAY)
             continue
+        elif response.status_code == 429:
+            if not local_rate_limit and ADAPTIVE_CONCURRENT_REQUESTS: concurrent_requests = max(MIN_CONCURRENT_REQUESTS, concurrent_requests - CONCURRENT_REQUESTS_INCREASE)
+            if not local_rate_limit and ADAPTIVE_RATE_LIMIT_DELAY: rate_limit_delay += RATE_LIMIT_DELAY_INCREASE
 
+            rateLimited = True
+            local_rate_limit = True
+
+            retry_counter += 1
+
+            print(f"\n{BOLD}{DARK_RED}Lost batch {batch_start}-{batch_end} due to rate limiting.{RESET}")
+
+            await asyncio.sleep(RETRY_DELAY)
+            continue
 
         # If the response time is unusually high --> suspect rate limiting or inadequate rate limit delay
         if (response_time > response_time_threshold) and ADAPTIVE_RATE_LIMIT_DELAY:
@@ -372,10 +384,10 @@ async def main():
                     ) or not ENABLE_FILTER:
                         game_info = {
                             "uid": game.get("id"),
-                            # "name": game.get("name"),
-                            # "visits": game.get("visits"),
-                            # "placeId": game.get("rootPlaceId"),
-                            # "favoritedCount": game.get("favoritedCount")
+                            "name": game.get("name"),
+                            "visits": game.get("visits"),
+                            "placeId": game.get("rootPlaceId"),
+                            "favoritedCount": game.get("favoritedCount")
                         }
                         games.append(game_info)
                         bulk_operations.append(InsertOne(game_info))
