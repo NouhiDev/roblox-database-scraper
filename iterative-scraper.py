@@ -11,7 +11,7 @@ import httpx
 import motor.motor_asyncio
 
 '''
-Roblox Game Scraper
+Roblox Iterative Game Scraper
 by nouhidev
 
 Special Thanks:
@@ -29,7 +29,7 @@ _VERSION = "0.0.5-iterative"
 BASE_URL = "https://games.roblox.com/v1/games?universeIds="
 
 # UIDs/Url (Default: 100)
-batch_size = 100
+BATCH_SIZE = 100
 
 # Concurrent Requests (Default: 100)
 concurrent_requests = 100
@@ -322,13 +322,13 @@ async def fetch_games(session, batch_start, batch_end):
 
 
 async def main():
-    global requested_count, current_iteration, concurrent_requests, progress_bar, start_id, suspected_rate_limit_count, rate_limit_delay, rateLimited, average_response_time, response_time_threshold_multiplier, previous_uids_per_second, dump_progress, batch_size, rate_limit_delay, games_scanned, bulk_operations, rate_limit_precaution_elapsed, requesting_loss_count, current_request, lost_batches, recovered_batches
+    global requested_count, current_iteration, concurrent_requests, progress_bar, start_id, suspected_rate_limit_count, rate_limit_delay, rateLimited, average_response_time, response_time_threshold_multiplier, previous_uids_per_second, dump_progress, BATCH_SIZE, rate_limit_delay, games_scanned, bulk_operations, rate_limit_precaution_elapsed, requesting_loss_count, current_request, lost_batches, recovered_batches
 
     async with httpx.AsyncClient(http2=True, limits=httpx.Limits(max_connections=None, max_keepalive_connections=0)) as session:
         while start_id < END_ID:
             print(f"{GRAY}{equals_line}{RESET}")
             print(f"{BOLD}{GOLDEN}{UNDERLINE}Iteration {current_iteration+1}{RESET}:")
-            print(f"{GRAY}[{batch_size} UIDs/Url; {concurrent_requests} cReqs]{RESET}")
+            print(f"{GRAY}[{BATCH_SIZE} UIDs/Url; {concurrent_requests} cReqs]{RESET}")
 
             dump_progress = 0
 
@@ -338,7 +338,7 @@ async def main():
 
             start_id = requested_count
 
-            progress_bar = tqdm(total=concurrent_requests, unit="req", desc=f"Requesting Batch {start_id:,}-{start_id+batch_size*concurrent_requests:,} ({(batch_size*concurrent_requests):,})")
+            progress_bar = tqdm(total=concurrent_requests, unit="req", desc=f"Requesting Batch {start_id:,}-{start_id+BATCH_SIZE*concurrent_requests:,} ({(BATCH_SIZE*concurrent_requests):,})")
 
             # Reset the rate limited flag for this iteration
             rateLimited = False
@@ -353,9 +353,9 @@ async def main():
             for _ in range(concurrent_requests):
                 if start_id >= END_ID:
                     break
-                batch_end = min(start_id + batch_size, END_ID)
+                batch_end = min(start_id + BATCH_SIZE, END_ID)
                 tasks.append(fetch_games(session, batch_start=start_id, batch_end=batch_end))
-                start_id += batch_size
+                start_id += BATCH_SIZE
 
             batch_results = await asyncio.gather(*tasks)
 
@@ -397,7 +397,7 @@ async def main():
 
             dump_progress_bar.update(1)
 
-            requested_count += batch_size*concurrent_requests
+            requested_count += BATCH_SIZE*concurrent_requests
 
             with open(COUNT_FILE_PATH, "w") as count_file:
                 count_file.write(str(requested_count))
@@ -411,7 +411,7 @@ async def main():
 
             dump_elapsed_time = time.time() - dump_start_time
 
-            uids_per_second = (batch_size*concurrent_requests)/elapsed_time
+            uids_per_second = (BATCH_SIZE*concurrent_requests)/elapsed_time
 
             uids_per_second_saved.append({'uids_per_second': uids_per_second, 'concurrent_requests': concurrent_requests, 'elapsed_time': elapsed_time})
 
@@ -463,11 +463,11 @@ async def main():
                 print(f"- Lost {requesting_loss_count:,} ({round((requesting_loss_count/games_scanned)*100, 2)}%) games to requesting errors")
                 print(f"- Currently storing {BOLD}{num_entries:,}{RESET} games")
                 print(f"{CYAN}Progress:{RESET}")
-                print(f"- {((requested_count - batch_size*concurrent_requests)/CURRENT_KNOWN_END_UID):.10f}%")
+                print(f"- {((requested_count - BATCH_SIZE*concurrent_requests)/CURRENT_KNOWN_END_UID):.10f}%")
                 max_uids_per_second = round(max(item['uids_per_second'] for item in uids_per_second_saved), 3)
                 max_uids_index = max(range(len(uids_per_second_saved)), key=lambda i: uids_per_second_saved[i]['uids_per_second'])
                 concurrent_requests = uids_per_second_saved[max_uids_index]['concurrent_requests']
-                print(f"{GRAY}(Request Min Time: {rate_limit_delay} s | Best Performance: {max_uids_per_second} UIDs/s at {concurrent_requests} cReqs with {batch_size} UIDs){RESET}")
+                print(f"{GRAY}(Request Min Time: {rate_limit_delay} s | Best Performance: {max_uids_per_second} UIDs/s at {concurrent_requests} cReqs with {BATCH_SIZE} UIDs){RESET}")
             else:
                 print(len(games) + " matches found")
 
