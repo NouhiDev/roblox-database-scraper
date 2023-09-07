@@ -23,13 +23,16 @@ _VERSION = "0.0.4"
 
 # ------- [ Scraping Parameters ] -------
 
+# https://games.roblox.com/v1/games/votes?universeIds=
+# https://games.roblox.com/v1/games?universeIds=
+
 BASE_URL = "https://games.roblox.com/v1/games?universeIds="
 
 # UIDs/Url (Default: 100)
 batch_size = 100
 
 # Concurrent Requests (Default: 100)
-concurrent_requests = 100
+concurrent_requests = 1000
 
 # UID to stop scraping at (Default: 5060800000)
 END_ID = 5060800000
@@ -46,8 +49,17 @@ ADAPTIVE_RATE_LIMIT_DELAY = False
 # Approximation of the highest UID
 CURRENT_KNOWN_END_UID = 5071111000
 
-# After each request wait this amount of seconds until making a new one
-CONCURRENT_REQUEST_SPAWN_DELAY = 0.01
+# After each request wait this amount of seconds until making a new one (Default: 0.1)
+CONCURRENT_REQUEST_SPAWN_DELAY = 0.0
+
+# Delay between iterations (Default: 0.0)
+TIME_BETWEEN_ITERATIONS = 0.0
+
+# Display intensive debug information (WIP)
+DISPLAY_DEBUG_INFORMATION = False
+
+# Leave out calculations and unnecessary printing (WIP)
+PERFORMANCE_MODE = False
 
 # ------------- [ Filter ] --------------
 
@@ -144,6 +156,9 @@ start_id = 0
 # Used to keep track of the scrapers progress
 requested_count = 0
 
+#
+current_request = 0
+
 # Checks whether any request in an iteration has been rate limited
 rateLimited = False
 
@@ -166,6 +181,7 @@ dump_steps = 2
 # -------- [ ANSI Escape Codes ] --------
 
 RED = '\033[91m'
+DARK_RED = '\033[0;31m'
 GREEN = '\033[92m'
 YELLOW = '\033[93m'
 RESET = '\033[0m'
@@ -206,18 +222,24 @@ except FileNotFoundError:
 # ----- [ ----------------------- ] -----
 
 async def fetch_games(session, batch_start, batch_end):
-    global last_request_time, rate_limit_delay, suspected_rate_limit_count, average_response_time, response_time_count, concurrent_requests, rateLimited, loss_count, rate_limit_precaution_elapsed, requesting_loss_count
+    global last_request_time, rate_limit_delay, suspected_rate_limit_count, average_response_time, response_time_count, concurrent_requests, rateLimited, loss_count, rate_limit_precaution_elapsed, requesting_loss_count, current_request
 
     # Construct the request URL
     universe_ids = ",".join(str(i) for i in range(batch_start, batch_end))
     url = BASE_URL + universe_ids
 
+    current_request += 1
+
     retry_counter = 0
 
     local_rate_limit = False
 
+    await asyncio.sleep(current_request*CONCURRENT_REQUEST_SPAWN_DELAY)
+
     while retry_counter < MAX_RETRIES:
         start_time = time.time()
+
+        if DISPLAY_DEBUG_INFORMATION: print(f"{GRAY}DEBUG: Requesting batch {batch_start}-{batch_end}{RESET}")
 
         # Try to GET the constructed request URL
         try:
@@ -247,7 +269,7 @@ async def fetch_games(session, batch_start, batch_end):
 
             retry_counter += 1
 
-            print(f"\n{BOLD}{RED}Lost batch {batch_start}-{batch_end} due to rate limiting.{RESET}")
+            print(f"\n{BOLD}{DARK_RED}Lost batch {batch_start}-{batch_end} due to rate limiting.{RESET}")
 
             await asyncio.sleep(RETRY_DELAY)
             continue
@@ -294,7 +316,7 @@ async def fetch_games(session, batch_start, batch_end):
 
 
 async def main():
-    global requested_count, current_iteration, concurrent_requests, progress_bar, start_id, suspected_rate_limit_count, rate_limit_delay, rateLimited, average_response_time, response_time_threshold_multiplier, previous_uids_per_second, dump_progress, batch_size, rate_limit_delay, games_scanned, bulk_operations, rate_limit_precaution_elapsed, requesting_loss_count
+    global requested_count, current_iteration, concurrent_requests, progress_bar, start_id, suspected_rate_limit_count, rate_limit_delay, rateLimited, average_response_time, response_time_threshold_multiplier, previous_uids_per_second, dump_progress, batch_size, rate_limit_delay, games_scanned, bulk_operations, rate_limit_precaution_elapsed, requesting_loss_count, current_request
 
     async with httpx.AsyncClient(http2=True, limits=httpx.Limits(max_connections=None, max_keepalive_connections=0)) as session:
         while start_id < END_ID:
@@ -315,6 +337,8 @@ async def main():
             # Reset the rate limited flag for this iteration
             rateLimited = False
 
+            current_request = 1
+
             # Initialize all concurrent requests
             for _ in range(concurrent_requests):
                 if start_id >= END_ID:
@@ -322,7 +346,6 @@ async def main():
                 batch_end = min(start_id + batch_size, END_ID)
                 tasks.append(fetch_games(session, batch_start=start_id, batch_end=batch_end))
                 start_id += batch_size
-                await asyncio.sleep(CONCURRENT_REQUEST_SPAWN_DELAY)
 
             batch_results = await asyncio.gather(*tasks)
 
@@ -347,10 +370,10 @@ async def main():
                     ):
                         game_info = {
                             "uid": game.get("id"),
-                            "name": game.get("name"),
-                            "visits": game.get("visits"),
-                            "placeId": game.get("rootPlaceId"),
-                            "favoritedCount": game.get("favoritedCount")
+                            # "name": game.get("name"),
+                            # "visits": game.get("visits"),
+                            # "placeId": game.get("rootPlaceId"),
+                            # "favoritedCount": game.get("favoritedCount")
                         }
                         games.append(game_info)
                         bulk_operations.append(InsertOne(game_info))
@@ -430,6 +453,8 @@ async def main():
 
             current_iteration += 1
             print(f"{GRAY}{equals_line}{RESET}")
+
+            await asyncio.sleep(TIME_BETWEEN_ITERATIONS)
 
 if __name__ == "__main__":
     asyncio.run(main())
