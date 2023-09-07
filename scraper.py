@@ -25,7 +25,7 @@ _VERSION = "0.0.5"
 # https://games.roblox.com/v1/games/votes?universeIds=
 # https://games.roblox.com/v1/games?universeIds=
 
-BASE_URL = "https://games.roblox.com/v1/games?universeIds="
+BASE_URL = "https://games.roblox.com/v1/games/votes?universeIds="
 
 # UIDs/Url (Default: 100)
 batch_size = 100
@@ -369,7 +369,7 @@ async def main():
                         and all(banned_string not in game.get("name") for banned_string in BANNED_STRINGS)
                         and (not CHECK_FOR_CREATED_UPDATED_EQUALITY or game.get("created") != game.get("updated"))
                         and (not CHECK_FOR_DESIRED_STRINGS or any(desired_string in game.get("name") for desired_string in DESIRED_STRINGS))
-                    ) or ENABLE_FILTER:
+                    ) or not ENABLE_FILTER:
                         game_info = {
                             "uid": game.get("id"),
                             # "name": game.get("name"),
