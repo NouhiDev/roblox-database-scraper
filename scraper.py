@@ -8,6 +8,7 @@ from pymongo.operations import InsertOne
 from dotenv import load_dotenv
 import os
 import httpx
+import motor.motor_asyncio
 
 '''
 Roblox Game Scraper
@@ -18,7 +19,7 @@ Special Thanks:
 - yqat
 '''
 
-_VERSION = "0.0.5"
+_VERSION = "0.0.5-iterative"
 
 # ------- [ Scraping Parameters ] -------
 
@@ -37,7 +38,7 @@ concurrent_requests = 100
 END_ID = 5060800000
 
 # Amount of seconds that have to be passed before returning the data (Default: 3)
-rate_limit_delay = 1
+rate_limit_delay = 2
 
 # Whether to dynamically increase/decrease the concurrent requests based on rate limiting
 ADAPTIVE_CONCURRENT_REQUESTS = False
@@ -48,17 +49,17 @@ ADAPTIVE_RATE_LIMIT_DELAY = False
 # Approximation of the highest UID
 CURRENT_KNOWN_END_UID = 5071111000
 
-# After each request wait this amount of seconds until making a new one (Default: 0.1)
-CONCURRENT_REQUEST_SPAWN_DELAY = 0.0
+# After each request wait this amount of seconds until making a new one (Default: 0.001)
+CONCURRENT_REQUEST_SPAWN_DELAY = 0.001
 
-# Delay between iterations (Default: 0.0)
-TIME_BETWEEN_ITERATIONS = 0.0
+# Delay between iterations (Default: 1.0)
+TIME_BETWEEN_ITERATIONS = 1.0
 
 # Display intensive debug information (WIP)
 DISPLAY_DEBUG_INFORMATION = False
 
-# Leave out calculations and unnecessary printing (WIP)
-PERFORMANCE_MODE = False
+# Leave out calculations and unnecessary printing
+PERFORMANCE_MODE = True
 
 # ------------- [ Filter ] --------------
 
@@ -158,7 +159,7 @@ start_id = 0
 # Used to keep track of the scrapers progress
 requested_count = 0
 
-#
+# Keeps track of the request made in each iteration
 current_request = 0
 
 # Checks whether any request in an iteration has been rate limited
@@ -172,6 +173,12 @@ MAX_RETRIES = 3
 
 # How many seconds the scraper should wait until retrying
 RETRY_DELAY = 2
+
+# Specifies what headers to send with the GET request
+GET_REQUEST_HEADERS = {}
+
+lost_batches = 0
+recovered_batches = 0
 
 # ------------- [ Other ] ---------------
 
@@ -205,7 +212,7 @@ bulk_operations = []
 
 uri = os.getenv("DATABASE_URL")
 
-client = MongoClient(uri, server_api=ServerApi('1'))
+client = motor.motor_asyncio.AsyncIOMotorClient(uri, server_api=ServerApi('1'))
 
 db = client[MONGODB_DATABASE_NAME]
 collection = db[MONGODB_COLLECTION_NAME]
@@ -224,7 +231,7 @@ except FileNotFoundError:
 # ----- [ ----------------------- ] -----
 
 async def fetch_games(session, batch_start, batch_end):
-    global last_request_time, rate_limit_delay, suspected_rate_limit_count, average_response_time, response_time_count, concurrent_requests, rateLimited, loss_count, rate_limit_precaution_elapsed, requesting_loss_count, current_request
+    global last_request_time, rate_limit_delay, suspected_rate_limit_count, average_response_time, response_time_count, concurrent_requests, rateLimited, loss_count, rate_limit_precaution_elapsed, requesting_loss_count, current_request, lost_batches, recovered_batches
 
     # Construct the request URL
     universe_ids = ",".join(str(i) for i in range(batch_start, batch_end))
@@ -245,7 +252,7 @@ async def fetch_games(session, batch_start, batch_end):
 
         # Try to GET the constructed request URL
         try:
-            response = await session.get(url, timeout=MAX_HTTPX_TIMEOUT)
+            response = await session.get(url, timeout=MAX_HTTPX_TIMEOUT, headers=GET_REQUEST_HEADERS)
         # If that fails retry 
         except Exception as e:
             retry_counter += 1
@@ -260,9 +267,7 @@ async def fetch_games(session, batch_start, batch_end):
 
         response_time_threshold = average_response_time * response_time_threshold_multiplier
 
-        # If the responses status code is 503 (Service Unavailable), 99.9% of the time it is related
-        # to a rate limiting error --> adjust concurrent requests and rate limit delay if enabled
-        if response.status_code == 503:
+        if response.status_code == 503 or response.status_code == 429:
             if not local_rate_limit and ADAPTIVE_CONCURRENT_REQUESTS: concurrent_requests = max(MIN_CONCURRENT_REQUESTS, concurrent_requests - CONCURRENT_REQUESTS_INCREASE)
             if not local_rate_limit and ADAPTIVE_RATE_LIMIT_DELAY: rate_limit_delay += RATE_LIMIT_DELAY_INCREASE
 
@@ -270,22 +275,8 @@ async def fetch_games(session, batch_start, batch_end):
             local_rate_limit = True
 
             retry_counter += 1
-
-            print(f"\n{BOLD}{DARK_RED}Lost batch {batch_start}-{batch_end} due to rate limiting.{RESET}")
-
-            await asyncio.sleep(RETRY_DELAY)
-            continue
-        elif response.status_code == 429:
-            if not local_rate_limit and ADAPTIVE_CONCURRENT_REQUESTS: concurrent_requests = max(MIN_CONCURRENT_REQUESTS, concurrent_requests - CONCURRENT_REQUESTS_INCREASE)
-            if not local_rate_limit and ADAPTIVE_RATE_LIMIT_DELAY: rate_limit_delay += RATE_LIMIT_DELAY_INCREASE
-
-            rateLimited = True
-            local_rate_limit = True
-
-            retry_counter += 1
-
-            print(f"\n{BOLD}{DARK_RED}Lost batch {batch_start}-{batch_end} due to rate limiting.{RESET}")
-
+            print(f" {BOLD}{DARK_RED}Lost batch {batch_start}-{batch_end} due to rate limiting [{response.status_code}]{RESET}")
+            lost_batches += 1
             await asyncio.sleep(RETRY_DELAY)
             continue
 
@@ -309,7 +300,8 @@ async def fetch_games(session, batch_start, batch_end):
         try:
             data = response.json()
             if local_rate_limit:
-                print(f"\n{BOLD}{UNDERLINE}{GREEN}Successfully recovered batch {batch_start}-{batch_end}.{RESET}")
+                recovered_batches += 1
+                print(f" {GREEN}Successfully recovered batch {batch_start}-{batch_end} ({recovered_batches}/{lost_batches}){RESET}")
             return data.get("data", [])
         # If the parsing fails retry
         except Exception as e:
@@ -318,7 +310,7 @@ async def fetch_games(session, batch_start, batch_end):
     
     # If all retrying attempts fail --> return an empty array and save the failed batch
     loss_count += 1
-    print(f"\n{BOLD}{RED}Could not recover batch {batch_start}-{batch_end}.{RESET}")
+    print(f" {RED}Could not recover batch {batch_start}-{batch_end}{RESET}")
     formatted = f"{batch_start}-{batch_end}\n"
     try:
         with open(ERRORED_BATCHES_FILE_PATH, "a") as file:
@@ -330,7 +322,7 @@ async def fetch_games(session, batch_start, batch_end):
 
 
 async def main():
-    global requested_count, current_iteration, concurrent_requests, progress_bar, start_id, suspected_rate_limit_count, rate_limit_delay, rateLimited, average_response_time, response_time_threshold_multiplier, previous_uids_per_second, dump_progress, batch_size, rate_limit_delay, games_scanned, bulk_operations, rate_limit_precaution_elapsed, requesting_loss_count, current_request
+    global requested_count, current_iteration, concurrent_requests, progress_bar, start_id, suspected_rate_limit_count, rate_limit_delay, rateLimited, average_response_time, response_time_threshold_multiplier, previous_uids_per_second, dump_progress, batch_size, rate_limit_delay, games_scanned, bulk_operations, rate_limit_precaution_elapsed, requesting_loss_count, current_request, lost_batches, recovered_batches
 
     async with httpx.AsyncClient(http2=True, limits=httpx.Limits(max_connections=None, max_keepalive_connections=0)) as session:
         while start_id < END_ID:
@@ -353,6 +345,10 @@ async def main():
 
             current_request = 1
 
+            lost_batches = 0
+
+            recovered_batches = 0
+
             # Initialize all concurrent requests
             for _ in range(concurrent_requests):
                 if start_id >= END_ID:
@@ -364,6 +360,13 @@ async def main():
             batch_results = await asyncio.gather(*tasks)
 
             progress_bar.close()
+
+            if lost_batches > 0:
+                if recovered_batches == lost_batches and lost_batches:
+                    print(f" {BOLD}{GREEN}Successfully recovered all {lost_batches} lost batches{RESET}")
+                else:
+                    print(f" {BOLD}{RED}Could not recover {lost_batches-recovered_batches} batches{RESET}")
+
 
             dump_progress_bar = tqdm(total=dump_steps, unit="steps", desc=f"Updating database")
 
@@ -402,7 +405,7 @@ async def main():
             dump_start_time = time.time()
 
             if bulk_operations:
-                collection.bulk_write(bulk_operations)
+                await collection.bulk_write(bulk_operations)
 
             dump_progress_bar.update(1)
 
@@ -425,11 +428,12 @@ async def main():
 
             dump_progress_bar.close()
 
-            print(f"{CYAN}Detailed Durations:{RESET}")
-            print(f"- Requesting took {round(elapsed_time, 3)} seconds (<= {round(average_response_time * response_time_threshold_multiplier, 3)} s)")
-            print(f"- Rate Limit Precautions took {round(rate_limit_precaution_elapsed, 3)} seconds")
-            print(f"- Dumping took {round(dump_elapsed_time, 3)} seconds")
-            print(f"= Total: {BOLD}{round(elapsed_time+rate_limit_precaution_elapsed+dump_elapsed_time, 3)} seconds{RESET} ({UNDERLINE}{round(uids_per_second, 3)} UIDs/s{RESET} | {uids_per_second_string}){RESET}")
+            if not PERFORMANCE_MODE:
+                print(f"{CYAN}Detailed Durations:{RESET}")
+                print(f"- Requesting took {round(elapsed_time, 3)} seconds (<= {round(average_response_time * response_time_threshold_multiplier, 3)} s)")
+                print(f"- Rate Limit Precautions took {round(rate_limit_precaution_elapsed, 3)} seconds")
+                print(f"- Dumping took {round(dump_elapsed_time, 3)} seconds")
+                print(f"= Total: {BOLD}{round(elapsed_time+rate_limit_precaution_elapsed+dump_elapsed_time, 3)} seconds{RESET} ({UNDERLINE}{round(uids_per_second, 3)} UIDs/s{RESET} | {uids_per_second_string}){RESET}")
 
             if ADAPTIVE_CONCURRENT_REQUESTS or ADAPTIVE_CONCURRENT_REQUESTS:print(f"{CYAN}Optimization Updates:{RESET}")
             if ADAPTIVE_CONCURRENT_REQUESTS:print(f"- Adaptive Rate Limiting:")
@@ -451,19 +455,21 @@ async def main():
                     rate_limit_delay -= RATE_LIMIT_DELAY_INCREASE
                     print(f"{GREEN}  - Not suspecting rate limiting. Decreasing the request min time from {rate_limit_delay + RATE_LIMIT_DELAY_INCREASE} s to {rate_limit_delay} s{RESET}")
 
-            num_entries = collection.count_documents({})
-
-            print(f"{CYAN}Database Updates:{RESET}")
-            print(f"- Found {UNDERLINE}{len(games):,}{RESET} new matching games")
-            print(f"- Lost {loss_count:,} ({round((loss_count/games_scanned)*100, 2)}%) games to rate limiting")
-            print(f"- Lost {requesting_loss_count:,} ({round((requesting_loss_count/games_scanned)*100, 2)}%) games to requesting errors")
-            print(f"- Currently storing {BOLD}{num_entries:,}{RESET} games")
-            print(f"{CYAN}Progress:{RESET}")
-            print(f"- {((requested_count - batch_size*concurrent_requests)/CURRENT_KNOWN_END_UID):.10f}%")
-            max_uids_per_second = round(max(item['uids_per_second'] for item in uids_per_second_saved), 3)
-            max_uids_index = max(range(len(uids_per_second_saved)), key=lambda i: uids_per_second_saved[i]['uids_per_second'])
-            concurrent_requests = uids_per_second_saved[max_uids_index]['concurrent_requests']
-            print(f"{GRAY}(Request Min Time: {rate_limit_delay} s | Best Performance: {max_uids_per_second} UIDs/s at {concurrent_requests} cReqs with {batch_size} UIDs){RESET}")
+            num_entries = await collection.count_documents({})
+            if not PERFORMANCE_MODE:
+                print(f"{CYAN}Database Updates:{RESET}")
+                print(f"- Found {UNDERLINE}{len(games):,}{RESET} new matching games")
+                print(f"- Lost {loss_count:,} ({round((loss_count/games_scanned)*100, 2)}%) games to rate limiting")
+                print(f"- Lost {requesting_loss_count:,} ({round((requesting_loss_count/games_scanned)*100, 2)}%) games to requesting errors")
+                print(f"- Currently storing {BOLD}{num_entries:,}{RESET} games")
+                print(f"{CYAN}Progress:{RESET}")
+                print(f"- {((requested_count - batch_size*concurrent_requests)/CURRENT_KNOWN_END_UID):.10f}%")
+                max_uids_per_second = round(max(item['uids_per_second'] for item in uids_per_second_saved), 3)
+                max_uids_index = max(range(len(uids_per_second_saved)), key=lambda i: uids_per_second_saved[i]['uids_per_second'])
+                concurrent_requests = uids_per_second_saved[max_uids_index]['concurrent_requests']
+                print(f"{GRAY}(Request Min Time: {rate_limit_delay} s | Best Performance: {max_uids_per_second} UIDs/s at {concurrent_requests} cReqs with {batch_size} UIDs){RESET}")
+            else:
+                print(len(games) + " matches found")
 
             current_iteration += 1
             print(f"{GRAY}{equals_line}{RESET}")
