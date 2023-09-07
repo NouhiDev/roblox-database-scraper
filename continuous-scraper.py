@@ -126,6 +126,7 @@ def print_stats(_current_requests_delay):
     print("===================================")
     print(f"Ongoing requests: {unresolved_requests}")
     print(f"Games added in session: {games_added_in_session:,} (Scanned {games_scanned_in_session:,})")
+    print(f"Running at: {round(games_scanned_in_session/elapsed_time, 3)} UIDs/s")
     print(f"Delay between new requests: {_current_requests_delay} seconds ({round(1/_current_requests_delay, 3)} reqs/s)")
     print(f"Session Elapsed Time: {formatted_elapsed_time} seconds")
 
