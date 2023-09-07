@@ -18,7 +18,7 @@ Special Thanks:
 - yqat
 '''
 
-_VERSION = "0.0.4"
+_VERSION = "0.0.5"
 
 # ------- [ Scraping Parameters ] -------
 
