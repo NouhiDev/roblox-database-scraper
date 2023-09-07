@@ -34,7 +34,7 @@ BASE_URL = "https://games.roblox.com/v1/games?universeIds="
 BATCH_SIZE = 100
 
 # Initial delay between requests
-INITIAL_REQUESTS_DELAY = 1
+INITIAL_REQUESTS_DELAY = 0.05
 
 RATE_LIMIT_DELAY_PENALTY_MULTIPLIER = 2
 
@@ -78,6 +78,9 @@ unresolved_requests = 0
 # Keeps track of the games added in the current session
 games_added_in_session = 0
 
+# Keeps track of the games scanned in the current session
+games_scanned_in_session = 0
+
 # ------- [ MongoDB Integration ] -------
 
 load_dotenv()
@@ -108,16 +111,26 @@ except FileNotFoundError:
 
 # ----- [ ----------------------- ] -----
 
+start_time = time.time()
+
+def format_time(seconds):
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
+
 def print_stats(_current_requests_delay):
-    global games_added_in_session
+    global games_added_in_session, games_scanned_in_session
     os.system('cls')
+    elapsed_time = time.time() - start_time
+    formatted_elapsed_time = format_time(elapsed_time)
     print("===================================")
     print(f"Ongoing requests: {unresolved_requests}")
-    print(f"Games added in session: {games_added_in_session}")
-    print(f"Delay between new requests: {_current_requests_delay} seconds")
+    print(f"Games added in session: {games_added_in_session:,} (Scanned {games_scanned_in_session:,})")
+    print(f"Delay between new requests: {_current_requests_delay} seconds ({round(1/_current_requests_delay, 3)} reqs/s)")
+    print(f"Session Elapsed Time: {formatted_elapsed_time} seconds")
 
 async def fetch_data(session, batch_start, batch_end, request_id):
-    global consecutive_no_rate_limit, current_requests_delay, unresolved_requests, games_added_in_session
+    global consecutive_no_rate_limit, current_requests_delay, unresolved_requests, games_added_in_session, games_scanned_in_session
 
     unresolved_requests += 1
 
@@ -175,13 +188,15 @@ async def fetch_data(session, batch_start, batch_end, request_id):
                 if entry["genre"] == "Horror" and entry["visits"] >= 1000:
                     games_added_in_session += 1
                     documents_to_insert.append(document)
+                games_scanned_in_session += 1
             
-            await collection.insert_many(documents_to_insert)
+            if documents_to_insert: await collection.insert_many(documents_to_insert)
             unresolved_requests -= 1
             return
         # If the parsing fails retry
         except Exception as e:
             print(f"[_id{request_id}] Failed to parse the response as JSON!")
+            print(e)
             retry_counter += 1
             await asyncio.sleep(current_requests_delay)
             continue
