@@ -62,6 +62,9 @@ PERFORMANCE_MODE = False
 
 # ------------- [ Filter ] --------------
 
+# Whether to apply filters or not
+ENABLE_FILTER = False
+
 # Only accept games with any of the desired strings in their name
 DESIRED_STRINGS = []
 
@@ -366,7 +369,7 @@ async def main():
                         and all(banned_string not in game.get("name") for banned_string in BANNED_STRINGS)
                         and (not CHECK_FOR_CREATED_UPDATED_EQUALITY or game.get("created") != game.get("updated"))
                         and (not CHECK_FOR_DESIRED_STRINGS or any(desired_string in game.get("name") for desired_string in DESIRED_STRINGS))
-                    ):
+                    ) or ENABLE_FILTER:
                         game_info = {
                             "uid": game.get("id"),
                             # "name": game.get("name"),
