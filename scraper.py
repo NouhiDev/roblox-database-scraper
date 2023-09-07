@@ -1,5 +1,4 @@
 import asyncio
-import aiohttp
 import time
 from tqdm import tqdm
 import shutil
