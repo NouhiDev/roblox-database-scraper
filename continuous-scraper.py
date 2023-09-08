@@ -37,12 +37,14 @@ BATCH_SIZE = 100
 # Initial delay between requests (Default: 0.05 --> 20reqs/s)
 INITIAL_REQUESTS_DELAY = 0.02
 
+# Multiplier by which the delay will be multiplied with on rate limit error
 RATE_LIMIT_DELAY_PENALTY_MULTIPLIER = 2
 
-MAX_REQUESTS_DELAY = 10
+# Max allowed delay between each request
+MAX_REQUESTS_DELAY = 2
 
-# Number of consecutive requests without rate limiting required to reset the delay between requests
-RATE_LIMIT_PENALTY_RESET_THRESHOLD = 10 / INITIAL_REQUESTS_DELAY
+# Number of consecutive requests without rate limiting required to reset the delay between requests (Default: 100)
+RATE_LIMIT_PENALTY_RESET_THRESHOLD = 100
 
 # UID to stop scraping at (Default: 5060800000)
 END_ID = 5060800000
@@ -50,19 +52,23 @@ END_ID = 5060800000
 # Amount of seconds that have to be passed before returning the data (Default: 3)
 RETURN_DATA_MINIMUM_DELAY = 2
 
+# Pause generating new requests while rate limits are being resolved
+PAUSE_ON_RATE_LIMIT = False
+
+# Amount of times a request will retry to get its batch
 MAX_RETRIES = 5
 
 # Display intensive debug information (WIP)
 DISPLAY_DEBUG_INFORMATION = False
 
 # Leave out calculations and unnecessary printing
-PERFORMANCE_MODE = True
+PERFORMANCE_MODE = False
 
 # -------- [ File Output Paths ] --------
 
-COUNT_FILE_PATH = "start_uid.txt"
+COUNT_FILE_PATH = "c_start_uid.txt"
 
-ERRORED_BATCHES_FILE_PATH = "errored_batches.txt"
+ERRORED_BATCHES_FILE_PATH = "c_errored_batches.txt"
 
 # -------- [ Requests Managing ] --------
 
@@ -166,9 +172,9 @@ def print_stats(_current_requests_delay):
     print(f"{GRAY}{equals_line}{RESET}")
     print(f"Consecutive not rate limited requests: {consecutive_no_rate_limit} reqs")
     print(f"{GRAY}{equals_line}{RESET}")
-    print(f"Most recent errors ({len(errored_requests)}): {errored_requests[-6:]} (...)")
-    print(f"Most recent recoveries ({len(recovered_requests)}): {recovered_requests[-6:]} (...)")
-    print(f"Most recent losses ({len(lost_requests)}): {lost_requests[-6:]} (...)")
+    print(f"Errors ({len(errored_requests)}): {errored_requests[-6:]} (...)")
+    print(f"Recoveries ({len(recovered_requests)}): {recovered_requests[-6:]} (...)")
+    print(f"Losses ({len(lost_requests)}): {lost_requests[-6:]} (...)")
     print(f"{GRAY}{equals_line}{RESET}")
 
 async def fetch_data(session, batch_start, batch_end, request_id):
@@ -184,6 +190,7 @@ async def fetch_data(session, batch_start, batch_end, request_id):
     # Decrease the current delay between requests after consecutive successful requests
     if consecutive_no_rate_limit >= RATE_LIMIT_PENALTY_RESET_THRESHOLD:
         current_requests_delay = max(current_requests_delay / RATE_LIMIT_DELAY_PENALTY_MULTIPLIER, INITIAL_REQUESTS_DELAY)
+        consecutive_no_rate_limit = 0
 
     while retry_counter < MAX_RETRIES:
         if (retry_counter > 0): print(f"[_id{request_id}] Retrying...")
@@ -209,6 +216,16 @@ async def fetch_data(session, batch_start, batch_end, request_id):
         # Try to parse the response as JSON
         try:
             data = response.json()
+
+            # Success !
+
+            saved_progress = 0
+            with open(COUNT_FILE_PATH, "r") as count_file:
+                saved_progress = int(count_file.read().strip())
+            with open(COUNT_FILE_PATH, "w") as count_file:
+                if not saved_progress: saved_progress = 0
+                count_file.write(str(max(batch_end, saved_progress)))
+
             consecutive_no_rate_limit += 1
 
             documents_to_insert = []
@@ -250,7 +267,7 @@ async def fetch_data(session, batch_start, batch_end, request_id):
     # All retries have failed
     unresolved_requests -= 1
     resolved_requests += 1
-    lost_requests.append(f"[_id{request_id}] Lost batch {batch_start:,}-{batch_end:,} after {MAX_RETRIES} retries")
+    if f"_id{request_id}" not in lost_requests: lost_requests.append(f"_id{request_id}")
         
 async def main():
     global start_uid, errored_requests, recovered_requests, lost_requests, current_requests_delay
@@ -265,6 +282,11 @@ async def main():
             if time.time() - last_print_time >= 1:
                 print_stats(current_requests_delay)
                 last_print_time = time.time()
+            
+            if PAUSE_ON_RATE_LIMIT:
+                if (len(lost_requests) + len(recovered_requests)) < len(errored_requests):
+                    continue
+
             batch_end = min(start_uid + BATCH_SIZE, END_ID)
             asyncio.create_task(fetch_data(session, start_uid, batch_end, request_id))
             start_uid += BATCH_SIZE
