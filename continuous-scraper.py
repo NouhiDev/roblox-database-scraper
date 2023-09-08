@@ -35,7 +35,7 @@ BASE_URL = "https://games.roblox.com/v1/games?universeIds="
 BATCH_SIZE = 100
 
 # Initial delay between requests (Default: 0.05 --> 20reqs/s)
-INITIAL_REQUESTS_DELAY = 1
+INITIAL_REQUESTS_DELAY = 0.1
 
 # Multiplier by which the delay will be multiplied with on rate limit error
 RATE_LIMIT_DELAY_PENALTY_INCREASE = 1.1
@@ -185,20 +185,19 @@ def print_stats(_current_requests_delay):
     elapsed_time = time.time() - start_time
     formatted_elapsed_time = format_time(elapsed_time)
     print(f"{GRAY}{equals_line}{RESET}")
-    print(f"Progress: {100*min(1.0, max(0.0, start_uid / END_ID)):.12f}%")
+    print(f"{CYAN}Progress: {100*min(1.0, max(0.0, start_uid / END_ID)):.12f}%{RESET}")
     print(CYAN + get_progress() + RESET)
     print(f"{GRAY}{equals_line}{RESET}")
     print(f"Ongoing requests: {(unresolved_requests):,} {GRAY}(Closed requests: {(resolved_requests):,} | Total requests: {(unresolved_requests+resolved_requests):,}){RESET}")
-    print(f"- Games added in session: {games_added_in_session:,} out of {games_scanned_in_session:,} scanned games")
+    print(f"- Games added in session: {games_added_in_session:,} out of {games_scanned_in_session:,} scanned games\n")
     print(f"Average session speed: {UNDERLINE}{round(games_scanned_in_session/elapsed_time, 3):,} UIDs/s{RESET}{GRAY} --> {round(60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/min --> {round(60*60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/h --> {round(24*60*60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/d ==> {RESET}{round(END_ID/max(24*60*60*(games_scanned_in_session/elapsed_time), 0.001))} days for all UIDs")
     print(f"- Delay between new requests: {_current_requests_delay} seconds")
-    print(f"{GRAY}{formatted_elapsed_time} | {round(1/_current_requests_delay, 3)} reqs/s{RESET}")
     print(f"{GRAY}{equals_line}{RESET}")
     print(f"{DARK_RED}Errored connections: {len(errored_requests)}{RESET}")
     print(f"- Recovered failed requests: {len(recovered_requests)}{RESET}")
     print(f"- Lost requests: {len(lost_requests)}{RESET}")
     print(f"{GRAY}{equals_line}{RESET}")
-    print(f"Consecutive successful requests: {consecutive_no_rate_limit} reqs")
+    print(f"{GRAY}{formatted_elapsed_time} | {round(1/_current_requests_delay, 3)} reqs/s | {consecutive_no_rate_limit} sCReqs{RESET}")
     print(f"{GRAY}{equals_line}{RESET}")
 
 async def fetch_data(session, batch_start, batch_end, request_id):
