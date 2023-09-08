@@ -160,7 +160,7 @@ except FileNotFoundError:
 
 # ----- [ ----------------------- ] -----
 
-start_time = time.time()
+start_time = time.perf_counter()
 
 def format_time(seconds):
     hours, remainder = divmod(seconds, 3600)
@@ -184,7 +184,7 @@ def get_progress():
 def print_stats(_current_requests_delay):
     global games_added_in_session, games_scanned_in_session, errored_requests, recovered_requests, resolved_requests, lost_requests, consecutive_no_rate_limit, start_uid
     os.system('cls')
-    elapsed_time = time.time() - start_time
+    elapsed_time = time.perf_counter() - start_time
     formatted_elapsed_time = format_time(elapsed_time)
 
     days_left = round(get_progress()[1]/max(24*60*60*(games_scanned_in_session/elapsed_time), 0.001))
@@ -321,12 +321,12 @@ async def main():
         request_id = 1
         current_requests_delay = INITIAL_REQUESTS_DELAY
 
-        last_print_time = time.time()
+        last_print_time = time.perf_counter()
 
         while start_uid < END_ID:
-            if time.time() - last_print_time >= 1:
+            if time.perf_counter() - last_print_time >= 1:
                 print_stats(current_requests_delay)
-                last_print_time = time.time()
+                last_print_time = time.perf_counter()
             
             if unresolved_requests < MAX_CONCURRENT_OPEN_REQUESTS:
                 batch_end = min(start_uid + BATCH_SIZE, END_ID)

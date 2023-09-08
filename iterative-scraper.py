@@ -246,7 +246,7 @@ async def fetch_games(session, batch_start, batch_end):
     await asyncio.sleep(current_request*CONCURRENT_REQUEST_SPAWN_DELAY)
 
     while retry_counter < MAX_RETRIES:
-        start_time = time.time()
+        start_time = time.perf_counter()
 
         if DISPLAY_DEBUG_INFORMATION: print(f"{GRAY}DEBUG: Requesting batch {batch_start}-{batch_end}{RESET}")
 
@@ -260,7 +260,7 @@ async def fetch_games(session, batch_start, batch_end):
             await asyncio.sleep(RETRY_DELAY)
             continue
 
-        response_time = time.time() - start_time
+        response_time = time.perf_counter() - start_time
 
         average_response_time = (average_response_time * response_time_count + response_time) / (response_time_count + 1)
         response_time_count += 1
@@ -286,15 +286,15 @@ async def fetch_games(session, batch_start, batch_end):
 
         progress_bar.update(1)
 
-        rate_limit_precaution_time = time.time()
+        rate_limit_precaution_time = time.perf_counter()
 
         # If the data returned earlier than the minimum waiting time --> sleep until it's over
-        if time.time() - last_request_time < rate_limit_delay:
-            await asyncio.sleep(rate_limit_delay - (time.time() - last_request_time))
+        if time.perf_counter() - last_request_time < rate_limit_delay:
+            await asyncio.sleep(rate_limit_delay - (time.perf_counter() - last_request_time))
 
-        rate_limit_precaution_elapsed = time.time() - rate_limit_precaution_time
+        rate_limit_precaution_elapsed = time.perf_counter() - rate_limit_precaution_time
 
-        last_request_time = time.time()
+        last_request_time = time.perf_counter()
 
         # Attempt to parse the response to JSON
         try:
@@ -334,7 +334,7 @@ async def main():
 
             tasks = []
 
-            start_time = time.time()
+            start_time = time.perf_counter()
 
             start_id = requested_count
 
@@ -370,7 +370,7 @@ async def main():
 
             dump_progress_bar = tqdm(total=dump_steps, unit="steps", desc=f"Updating database")
 
-            elapsed_time = time.time() - start_time
+            elapsed_time = time.perf_counter() - start_time
 
             bulk_operations = []
 
@@ -402,14 +402,14 @@ async def main():
             with open(COUNT_FILE_PATH, "w") as count_file:
                 count_file.write(str(requested_count))
 
-            dump_start_time = time.time()
+            dump_start_time = time.perf_counter()
 
             if bulk_operations:
                 await collection.bulk_write(bulk_operations)
 
             dump_progress_bar.update(1)
 
-            dump_elapsed_time = time.time() - dump_start_time
+            dump_elapsed_time = time.perf_counter() - dump_start_time
 
             uids_per_second = (BATCH_SIZE*concurrent_requests)/elapsed_time
 
