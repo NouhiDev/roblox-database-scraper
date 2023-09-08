@@ -172,12 +172,14 @@ def get_progress():
     terminal_width, _ = shutil.get_terminal_size()
     terminal_width -= 2
     
-    progress_ratio = min(1.0, max(0.0, start_uid / END_ID))
+    goal = END_ID - start_uid
+
+    progress_ratio = min(1.0, max(0.0, games_scanned_in_session / goal))
     num_symbols = int(terminal_width * progress_ratio)
     
     progress_bar = "(" + "-" * num_symbols + " " * (terminal_width - num_symbols) + ")"
     
-    return progress_bar
+    return (progress_bar, goal)
 
 def print_stats(_current_requests_delay):
     global games_added_in_session, games_scanned_in_session, errored_requests, recovered_requests, resolved_requests, lost_requests, consecutive_no_rate_limit, start_uid
@@ -185,8 +187,8 @@ def print_stats(_current_requests_delay):
     elapsed_time = time.time() - start_time
     formatted_elapsed_time = format_time(elapsed_time)
     print(f"{GRAY}{equals_line}{RESET}")
-    print(f"{CYAN}Progress: {100*min(1.0, max(0.0, start_uid / END_ID)):.12f}%{RESET}")
-    print(CYAN + get_progress() + RESET)
+    print(f"{CYAN}Progress: {100*min(1.0, max(0.0, games_scanned_in_session / get_progress()[1])):.12f}%{RESET} ({games_scanned_in_session}/{get_progress()[1]})")
+    print(CYAN + get_progress()[0] + RESET)
     print(f"{GRAY}{equals_line}{RESET}")
     print(f"Ongoing requests: {(unresolved_requests):,} {GRAY}(Closed requests: {(resolved_requests):,} | Total requests: {(unresolved_requests+resolved_requests):,}){RESET}")
     print(f"- Games added in session: {games_added_in_session:,} out of {games_scanned_in_session:,} scanned games\n")
