@@ -4,3 +4,4 @@ start_uid.txt
 clear-mongodb.py
 test.py
 c_start_uid.txt
+games.db

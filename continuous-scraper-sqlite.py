@@ -275,7 +275,13 @@ async def fetch_data(session, batch_start, batch_end, request_id):
                     documents_to_insert.append(document)
                 games_scanned_in_session += 1
             
-            if documents_to_insert: await collection.insert_many(documents_to_insert)
+            if documents_to_insert:
+                for doc in documents_to_insert:
+                    cursor.execute('''
+                        INSERT INTO scraped_data (uid, place_id, visits, name, favoritedCount)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (doc["uid"], doc["placeId"], doc["visits"], doc["name"], doc["favoritedCount"]))
+                conn.commit()
             unresolved_requests -= 1
             resolved_requests += 1
             if retry_counter > 0:
