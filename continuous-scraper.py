@@ -167,23 +167,6 @@ def format_time(seconds):
     minutes, seconds = divmod(remainder, 60)
     return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
 
-def format_duration(seconds):
-    days, seconds = divmod(seconds, 86400)
-    hours, seconds = divmod(seconds, 3600)
-    minutes, seconds = divmod(seconds, 60)
-
-    duration_str = ""
-    if days > 0:
-        duration_str += f"{round(days, 2)} days, "
-    if hours > 0:
-        duration_str += f"{round(hours, 2)} hours, "
-    if minutes > 0:
-        duration_str += f"{round(minutes, 2)} minutes, "
-    if seconds > 0 or not duration_str:
-        duration_str += f"{round(seconds, 2)} seconds"
-
-    return duration_str
-
 def get_progress():
     global start_uid
     terminal_width, _ = shutil.get_terminal_size()
@@ -203,14 +186,19 @@ def print_stats(_current_requests_delay):
     os.system('cls')
     elapsed_time = time.time() - start_time
     formatted_elapsed_time = format_time(elapsed_time)
+
+    days_left = round(get_progress()[1]/max(24*60*60*(games_scanned_in_session/elapsed_time), 0.001))
+    days_left_str = f"{round(get_progress()[1]/max(24*60*60*(games_scanned_in_session/elapsed_time), 0.001))} days"
+    if (days_left < 0): days_left_str = "less than a day"
+
     print(f"{GRAY}{equals_line}{RESET}")
     print(f"{CYAN}Progress: {100*min(1.0, max(0.0, games_scanned_in_session / get_progress()[1])):.12f}%{RESET} ({games_scanned_in_session}/{get_progress()[1]})")
-    print(f"{GRAY}Estimate: {format_duration(games_scanned_in_session/elapsed_time)} left{RESET}")
+    print(f"{GRAY}Estimate: {days_left_str} left{RESET}")
     print(CYAN + get_progress()[0] + RESET)
     print(f"{GRAY}{equals_line}{RESET}")
     print(f"Ongoing requests: {(unresolved_requests):,} {GRAY}(Closed requests: {(resolved_requests):,} | Total requests: {(unresolved_requests+resolved_requests):,}){RESET}")
     print(f"- Games added in session: {games_added_in_session:,} out of {games_scanned_in_session:,} scanned games\n")
-    print(f"Average session speed: {UNDERLINE}{round(games_scanned_in_session/elapsed_time, 3):,} UIDs/s{RESET}{GRAY} > {round(60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/min > {round(60*60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/h > {round(24*60*60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/d => {RESET}{round(END_ID/max(24*60*60*(games_scanned_in_session/elapsed_time), 0.001))} for all")
+    print(f"Average session speed: {UNDERLINE}{round(games_scanned_in_session/elapsed_time, 3):,} UIDs/s{RESET}{GRAY} > {round(60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/min > {round(60*60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/h > {round(24*60*60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/d => {RESET}{round(END_ID/max(24*60*60*(games_scanned_in_session/elapsed_time), 0.001))}d for all")
     print(f"- Delay between new requests: {_current_requests_delay} seconds")
     print(f"{GRAY}{equals_line}{RESET}")
     print(f"{DARK_RED}Errored connections: {len(errored_requests)}{RESET}")
