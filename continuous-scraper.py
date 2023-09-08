@@ -35,7 +35,7 @@ BASE_URL = "https://games.roblox.com/v1/games?universeIds="
 BATCH_SIZE = 100
 
 # Initial delay between requests (Default: 0.05 --> 20reqs/s)
-INITIAL_REQUESTS_DELAY = 0.1
+INITIAL_REQUESTS_DELAY = 0.07
 
 # Multiplier by which the delay will be multiplied with on rate limit error
 RATE_LIMIT_DELAY_PENALTY_INCREASE = 1.1
@@ -44,13 +44,13 @@ RATE_LIMIT_DELAY_PENALTY_INCREASE = 1.1
 RATE_LIMIT_DELAY_PENALTY_DECREASE = 4
 
 # Max allowed delay between each request
-MAX_REQUESTS_DELAY = 2
+MAX_REQUESTS_DELAY = 1
 
 # Number of consecutive requests without rate limiting required to reset the delay between requests (Default: 100)
 RATE_LIMIT_PENALTY_RESET_THRESHOLD = 100
 
 # UID to stop scraping at (Default: 5060800000)
-END_ID = 4244000000
+END_ID = 5060800000
 
 # Amount of seconds that have to be passed before returning the data (Default: 3)
 RETURN_DATA_MINIMUM_DELAY = 2
@@ -174,13 +174,13 @@ def format_duration(seconds):
 
     duration_str = ""
     if days > 0:
-        duration_str += f"{days} days, "
+        duration_str += f"{round(days, 2)} days, "
     if hours > 0:
-        duration_str += f"{hours} hours, "
+        duration_str += f"{round(hours, 2)} hours, "
     if minutes > 0:
-        duration_str += f"{minutes} minutes, "
+        duration_str += f"{round(minutes, 2)} minutes, "
     if seconds > 0 or not duration_str:
-        duration_str += f"{seconds} seconds"
+        duration_str += f"{round(seconds, 2)} seconds"
 
     return duration_str
 
@@ -205,7 +205,7 @@ def print_stats(_current_requests_delay):
     formatted_elapsed_time = format_time(elapsed_time)
     print(f"{GRAY}{equals_line}{RESET}")
     print(f"{CYAN}Progress: {100*min(1.0, max(0.0, games_scanned_in_session / get_progress()[1])):.12f}%{RESET} ({games_scanned_in_session}/{get_progress()[1]})")
-    print(f"{GRAY}Estimate: {format_duration(round(games_scanned_in_session/elapsed_time, 3))} left{RESET}")
+    print(f"{GRAY}Estimate: {format_duration(games_scanned_in_session/elapsed_time)} left{RESET}")
     print(CYAN + get_progress()[0] + RESET)
     print(f"{GRAY}{equals_line}{RESET}")
     print(f"Ongoing requests: {(unresolved_requests):,} {GRAY}(Closed requests: {(resolved_requests):,} | Total requests: {(unresolved_requests+resolved_requests):,}){RESET}")
