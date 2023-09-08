@@ -35,7 +35,7 @@ BASE_URL = "https://games.roblox.com/v1/games?universeIds="
 BATCH_SIZE = 100
 
 # Initial delay between requests (Default: 0.05 --> 20reqs/s)
-INITIAL_REQUESTS_DELAY = 0.02
+INITIAL_REQUESTS_DELAY = 0.01
 
 # Multiplier by which the delay will be multiplied with on rate limit error
 RATE_LIMIT_DELAY_PENALTY_INCREASE = 1.1
@@ -55,11 +55,17 @@ END_ID = 5060800000
 # Amount of seconds that have to be passed before returning the data (Default: 3)
 RETURN_DATA_MINIMUM_DELAY = 2
 
-# Pause generating new requests while rate limits are being resolved
-PAUSE_ON_RATE_LIMIT = False
-
 # Amount of times a request will retry to get its batch
 MAX_RETRIES = 30
+
+# Concurrent open requests cap
+MAX_CONCURRENT_OPEN_REQUESTS = 2000
+
+# Base for calculating the random retry time for each failed request
+MIN_RETRY_SLEEP_TIME = 1
+
+# A random number between these bounds will be added to the base sleeping time when retrying
+RANDOM_SLEEP_TIME_BOUNDS = (1, 10)
 
 # Display intensive debug information (WIP)
 DISPLAY_DEBUG_INFORMATION = False
@@ -202,7 +208,7 @@ async def fetch_data(session, batch_start, batch_end, request_id):
         # HTTP request error handling
         except Exception as e:
             retry_counter += 1
-            await asyncio.sleep(2 + random.uniform(1, 10))
+            await asyncio.sleep(MIN_RETRY_SLEEP_TIME + random.uniform(RANDOM_SLEEP_TIME_BOUNDS[0], RANDOM_SLEEP_TIME_BOUNDS[1]))
             continue
 
         # Rate limit handling for v1/games and v1/votes endpoints
@@ -212,7 +218,7 @@ async def fetch_data(session, batch_start, batch_end, request_id):
             consecutive_no_rate_limit = 0
             retry_counter += 1
             if f"_id{request_id}" not in errored_requests: errored_requests.append(f"_id{request_id}")
-            await asyncio.sleep(2 + random.uniform(1, 10))
+            await asyncio.sleep(MIN_RETRY_SLEEP_TIME + random.uniform(RANDOM_SLEEP_TIME_BOUNDS[0], RANDOM_SLEEP_TIME_BOUNDS[1]))
             continue
         
         # Try to parse the response as JSON
@@ -269,7 +275,7 @@ async def fetch_data(session, batch_start, batch_end, request_id):
             errored_requests = [id for id in errored_requests if id != f"_id{request_id}"]
             print(e)
             retry_counter += 1
-            await asyncio.sleep(2 + random.uniform(1, 10))
+            await asyncio.sleep(MIN_RETRY_SLEEP_TIME + random.uniform(RANDOM_SLEEP_TIME_BOUNDS[0], RANDOM_SLEEP_TIME_BOUNDS[1]))
             continue
     
     # All retries have failed
@@ -278,7 +284,7 @@ async def fetch_data(session, batch_start, batch_end, request_id):
     if f"_id{request_id}" not in lost_requests: lost_requests.append(f"_id{request_id}")
         
 async def main():
-    global start_uid, errored_requests, recovered_requests, lost_requests, current_requests_delay
+    global start_uid, errored_requests, recovered_requests, lost_requests, current_requests_delay, unresolved_requests, resolved_requests
 
     saved_progress = 0
     with open(COUNT_FILE_PATH, "r") as count_file:
@@ -300,14 +306,11 @@ async def main():
                 print_stats(current_requests_delay)
                 last_print_time = time.time()
             
-            if PAUSE_ON_RATE_LIMIT:
-                if (len(lost_requests) + len(recovered_requests)) < len(errored_requests):
-                    continue
-
-            batch_end = min(start_uid + BATCH_SIZE, END_ID)
-            asyncio.create_task(fetch_data(session, start_uid, batch_end, request_id))
-            start_uid += BATCH_SIZE
-            request_id += 1
+            if (resolved_requests + unresolved_requests) <= MAX_CONCURRENT_OPEN_REQUESTS:
+                batch_end = min(start_uid + BATCH_SIZE, END_ID)
+                asyncio.create_task(fetch_data(session, start_uid, batch_end, request_id))
+                start_uid += BATCH_SIZE
+                request_id += 1
             await asyncio.sleep(current_requests_delay)
 
 if __name__ == "__main__":
