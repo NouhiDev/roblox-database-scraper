@@ -105,9 +105,6 @@ lost_requests = []
 # Keeps track of the resolved requests
 resolved_requests = 0
 
-# Stores the inital c_start_uid.txt starting UID
-initial_start_uid = 0
-
 # ------------- [ Other ] ---------------
 
 progress_bar = None
@@ -281,15 +278,13 @@ async def fetch_data(session, batch_start, batch_end, request_id):
     if f"_id{request_id}" not in lost_requests: lost_requests.append(f"_id{request_id}")
         
 async def main():
-    global start_uid, errored_requests, recovered_requests, lost_requests, current_requests_delay, initial_start_uid, games_scanned_in_session
+    global start_uid, errored_requests, recovered_requests, lost_requests, current_requests_delay
 
     saved_progress = 0
-
     with open(COUNT_FILE_PATH, "r") as count_file:
         saved_progress = int(count_file.read().strip())
     if not saved_progress: saved_progress = 0
     start_uid = saved_progress
-    initial_start_uid = saved_progress
     print(f"Starting continuous scraping at UID: {start_uid}")
 
     await asyncio.sleep(3)
@@ -308,9 +303,6 @@ async def main():
             if PAUSE_ON_RATE_LIMIT:
                 if (len(lost_requests) + len(recovered_requests)) < len(errored_requests):
                     continue
-
-            with open(COUNT_FILE_PATH, "w") as count_file:
-                count_file.write(str(initial_start_uid+games_scanned_in_session))
 
             batch_end = min(start_uid + BATCH_SIZE, END_ID)
             asyncio.create_task(fetch_data(session, start_uid, batch_end, request_id))
