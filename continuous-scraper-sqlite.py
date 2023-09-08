@@ -2,27 +2,23 @@ import asyncio
 import time
 from tqdm import tqdm
 import shutil
-from pymongo.mongo_client import MongoClient
-from pymongo.server_api import ServerApi
-from pymongo.operations import InsertOne
-from dotenv import load_dotenv
+import sqlite3
 import os
 import httpx
-import motor.motor_asyncio
 import random
 
 '''
 
 
 
-Roblox Continuous Game Scraper
+Roblox Continuous Game Scraper (SQlite)
 by nouhidev
 
 
 
 '''
 
-_VERSION = "0.0.1-continuous"
+_VERSION = "0.0.1-continuous-sqlite"
 
 # ------- [ Scraping Parameters ] -------
 
@@ -59,7 +55,7 @@ RETURN_DATA_MINIMUM_DELAY = 2
 MAX_RETRIES = 30
 
 # Concurrent open requests cap (Default: 2000)
-MAX_CONCURRENT_OPEN_REQUESTS = 2000
+MAX_CONCURRENT_OPEN_REQUESTS = 2200
 
 # Base for calculating the random retry time for each failed request
 MIN_RETRY_SLEEP_TIME = 1
@@ -130,22 +126,21 @@ GOLDEN = '\033[93m'
 UNDERLINE = '\033[4m'
 CYAN = '\033[96m'
 
-# ------- [ MongoDB Integration ] -------
+# ------- [ SQLite Integration ] -------
 
-load_dotenv()
+conn = sqlite3.connect('games.db')
 
-MONGODB_DATABASE_NAME = "games"
+cursor = conn.cursor()
 
-MONGODB_COLLECTION_NAME = "scraped"
-
-bulk_operations = []
-
-uri = os.getenv("DATABASE_URL")
-
-client = motor.motor_asyncio.AsyncIOMotorClient(uri, server_api=ServerApi('1'))
-
-db = client[MONGODB_DATABASE_NAME]
-collection = db[MONGODB_COLLECTION_NAME]
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS scraped_data (
+        uid INTEGER PRIMARY KEY,
+        place_id INTEGER,
+        visits INTEGER,
+        name TEXT,
+        favoritedCount INTEGER
+    )
+''')
 
 # ----- [ Get Start UID from File ] -----
 
