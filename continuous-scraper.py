@@ -38,7 +38,10 @@ BATCH_SIZE = 100
 INITIAL_REQUESTS_DELAY = 0.02
 
 # Multiplier by which the delay will be multiplied with on rate limit error
-RATE_LIMIT_DELAY_PENALTY_MULTIPLIER = 2
+RATE_LIMIT_DELAY_PENALTY_INCREASE = 1.1
+
+# Multiplier by which the delay will be multiplied with on rate limit error
+RATE_LIMIT_DELAY_PENALTY_DECREASE = 4
 
 # Max allowed delay between each request
 MAX_REQUESTS_DELAY = 2
@@ -56,7 +59,7 @@ RETURN_DATA_MINIMUM_DELAY = 2
 PAUSE_ON_RATE_LIMIT = False
 
 # Amount of times a request will retry to get its batch
-MAX_RETRIES = 5
+MAX_RETRIES = 30
 
 # Display intensive debug information (WIP)
 DISPLAY_DEBUG_INFORMATION = False
@@ -101,6 +104,9 @@ lost_requests = []
 
 # Keeps track of the resolved requests
 resolved_requests = 0
+
+# Stores the inital c_start_uid.txt starting UID
+initial_start_uid = 0
 
 # ------------- [ Other ] ---------------
 
@@ -189,14 +195,13 @@ async def fetch_data(session, batch_start, batch_end, request_id):
     
     # Decrease the current delay between requests after consecutive successful requests
     if consecutive_no_rate_limit >= RATE_LIMIT_PENALTY_RESET_THRESHOLD:
-        current_requests_delay = max(current_requests_delay / RATE_LIMIT_DELAY_PENALTY_MULTIPLIER, INITIAL_REQUESTS_DELAY)
+        current_requests_delay = max(current_requests_delay / RATE_LIMIT_DELAY_PENALTY_DECREASE, INITIAL_REQUESTS_DELAY)
         consecutive_no_rate_limit = 0
 
     while retry_counter < MAX_RETRIES:
-        if (retry_counter > 0): print(f"[_id{request_id}] Retrying...")
         # Try to sent the HTTP request
         try:
-            response = await session.get(url, timeout=10)
+            response = await session.get(url, timeout=360)
         # HTTP request error handling
         except Exception as e:
             retry_counter += 1
@@ -206,7 +211,7 @@ async def fetch_data(session, batch_start, batch_end, request_id):
         # Rate limit handling for v1/games and v1/votes endpoints
         if response.status_code == 503 or response.status_code == 429:
             # Penalize the script for getting rate limited
-            current_requests_delay = min(current_requests_delay * RATE_LIMIT_DELAY_PENALTY_MULTIPLIER, MAX_REQUESTS_DELAY)
+            current_requests_delay = min(current_requests_delay * RATE_LIMIT_DELAY_PENALTY_INCREASE, MAX_REQUESTS_DELAY)
             consecutive_no_rate_limit = 0
             retry_counter += 1
             if f"_id{request_id}" not in errored_requests: errored_requests.append(f"_id{request_id}")
@@ -254,11 +259,17 @@ async def fetch_data(session, batch_start, batch_end, request_id):
             unresolved_requests -= 1
             resolved_requests += 1
             if retry_counter > 0:
-                if f"_id{request_id}" not in recovered_requests: recovered_requests.append(f"_id{request_id}")
+                for id in errored_requests:
+                    if id == f"_id{request_id}":
+                        recovered_requests.append(f"_id{request_id}")
+                errored_requests = [id for id in errored_requests if id != f"_id{request_id}"]
             return
         # If the parsing fails retry
         except Exception as e:
-            if f"_id{request_id}" not in errored_requests: errored_requests.append(f"_id{request_id}")
+            for id in errored_requests:
+                    if id == f"_id{request_id}":
+                        lost_requests.append(f"_id{request_id}")
+            errored_requests = [id for id in errored_requests if id != f"_id{request_id}"]
             print(e)
             retry_counter += 1
             await asyncio.sleep(2 + random.uniform(1, 10))
@@ -270,7 +281,18 @@ async def fetch_data(session, batch_start, batch_end, request_id):
     if f"_id{request_id}" not in lost_requests: lost_requests.append(f"_id{request_id}")
         
 async def main():
-    global start_uid, errored_requests, recovered_requests, lost_requests, current_requests_delay
+    global start_uid, errored_requests, recovered_requests, lost_requests, current_requests_delay, initial_start_uid, games_scanned_in_session
+
+    saved_progress = 0
+
+    with open(COUNT_FILE_PATH, "r") as count_file:
+        saved_progress = int(count_file.read().strip())
+    if not saved_progress: saved_progress = 0
+    start_uid = saved_progress
+    initial_start_uid = saved_progress
+    print(f"Starting continuous scraping at UID: {start_uid}")
+
+    await asyncio.sleep(3)
 
     async with httpx.AsyncClient(http2=True, limits=httpx.Limits(max_connections=None, max_keepalive_connections=0)) as session:
         request_id = 1
@@ -286,6 +308,9 @@ async def main():
             if PAUSE_ON_RATE_LIMIT:
                 if (len(lost_requests) + len(recovered_requests)) < len(errored_requests):
                     continue
+
+            with open(COUNT_FILE_PATH, "w") as count_file:
+                count_file.write(str(initial_start_uid+games_scanned_in_session))
 
             batch_end = min(start_uid + BATCH_SIZE, END_ID)
             asyncio.create_task(fetch_data(session, start_uid, batch_end, request_id))
