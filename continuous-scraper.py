@@ -50,7 +50,7 @@ MAX_REQUESTS_DELAY = 2
 RATE_LIMIT_PENALTY_RESET_THRESHOLD = 100
 
 # UID to stop scraping at (Default: 5060800000)
-END_ID = 5060800000
+END_ID = 4244000000
 
 # Amount of seconds that have to be passed before returning the data (Default: 3)
 RETURN_DATA_MINIMUM_DELAY = 2
@@ -188,11 +188,12 @@ def print_stats(_current_requests_delay):
     formatted_elapsed_time = format_time(elapsed_time)
     print(f"{GRAY}{equals_line}{RESET}")
     print(f"{CYAN}Progress: {100*min(1.0, max(0.0, games_scanned_in_session / get_progress()[1])):.12f}%{RESET} ({games_scanned_in_session}/{get_progress()[1]})")
+    print(f"{GRAY}Estimate: {round(get_progress()[1]/max(24*60*60*(games_scanned_in_session/elapsed_time), 0.001))} days > {round(get_progress()[1]/max(60*(games_scanned_in_session/elapsed_time), 0.001))} minutes until finished{RESET}")
     print(CYAN + get_progress()[0] + RESET)
     print(f"{GRAY}{equals_line}{RESET}")
     print(f"Ongoing requests: {(unresolved_requests):,} {GRAY}(Closed requests: {(resolved_requests):,} | Total requests: {(unresolved_requests+resolved_requests):,}){RESET}")
     print(f"- Games added in session: {games_added_in_session:,} out of {games_scanned_in_session:,} scanned games\n")
-    print(f"Average session speed: {UNDERLINE}{round(games_scanned_in_session/elapsed_time, 3):,} UIDs/s{RESET}{GRAY} --> {round(60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/min --> {round(60*60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/h --> {round(24*60*60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/d ==> {RESET}{round(END_ID/max(24*60*60*(games_scanned_in_session/elapsed_time), 0.001))} days for all UIDs")
+    print(f"Average session speed: {UNDERLINE}{round(games_scanned_in_session/elapsed_time, 3):,} UIDs/s{RESET}{GRAY} > {round(60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/min > {round(60*60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/h > {round(24*60*60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/d => {RESET}{round(END_ID/max(24*60*60*(games_scanned_in_session/elapsed_time), 0.001))} for all")
     print(f"- Delay between new requests: {_current_requests_delay} seconds")
     print(f"{GRAY}{equals_line}{RESET}")
     print(f"{DARK_RED}Errored connections: {len(errored_requests)}{RESET}")
