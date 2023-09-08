@@ -167,6 +167,23 @@ def format_time(seconds):
     minutes, seconds = divmod(remainder, 60)
     return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
 
+def format_duration(seconds):
+    days, seconds = divmod(seconds, 86400)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+
+    duration_str = ""
+    if days > 0:
+        duration_str += f"{days} days, "
+    if hours > 0:
+        duration_str += f"{hours} hours, "
+    if minutes > 0:
+        duration_str += f"{minutes} minutes, "
+    if seconds > 0 or not duration_str:
+        duration_str += f"{seconds} seconds"
+
+    return duration_str
+
 def get_progress():
     global start_uid
     terminal_width, _ = shutil.get_terminal_size()
@@ -188,7 +205,7 @@ def print_stats(_current_requests_delay):
     formatted_elapsed_time = format_time(elapsed_time)
     print(f"{GRAY}{equals_line}{RESET}")
     print(f"{CYAN}Progress: {100*min(1.0, max(0.0, games_scanned_in_session / get_progress()[1])):.12f}%{RESET} ({games_scanned_in_session}/{get_progress()[1]})")
-    print(f"{GRAY}Estimate: {round(get_progress()[1]/max(24*60*60*(games_scanned_in_session/elapsed_time), 0.001))} days > {round(get_progress()[1]/max(60*(games_scanned_in_session/elapsed_time), 0.001))} minutes until finished{RESET}")
+    print(f"{GRAY}Estimate: {format_duration(round(games_scanned_in_session/elapsed_time, 3))} left{RESET}")
     print(CYAN + get_progress()[0] + RESET)
     print(f"{GRAY}{equals_line}{RESET}")
     print(f"Ongoing requests: {(unresolved_requests):,} {GRAY}(Closed requests: {(resolved_requests):,} | Total requests: {(unresolved_requests+resolved_requests):,}){RESET}")
