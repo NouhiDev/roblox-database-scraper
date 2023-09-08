@@ -33,13 +33,13 @@ BASE_URL = "https://games.roblox.com/v1/games?universeIds="
 # UIDs/Url (Default: 100)
 BATCH_SIZE = 100
 
-# Initial delay between requests
+# Initial delay between requests (Default: 0.05 --> 20reqs/s)
 INITIAL_REQUESTS_DELAY = 0.05
 
 RATE_LIMIT_DELAY_PENALTY_MULTIPLIER = 2
 
 # Number of consecutive requests without rate limiting required to reset the delay between requests
-RATE_LIMIT_PENALTY_RESET_THRESHOLD = 10
+RATE_LIMIT_PENALTY_RESET_THRESHOLD = 10 / INITIAL_REQUESTS_DELAY
 
 # UID to stop scraping at (Default: 5060800000)
 END_ID = 5060800000
@@ -81,6 +81,37 @@ games_added_in_session = 0
 # Keeps track of the games scanned in the current session
 games_scanned_in_session = 0
 
+# Keeps track of the errored requests
+errored_requests = []
+
+# Keeps track of the recovered requests
+recovered_requests = []
+
+# Keeps track of the lost requests
+lost_requests = []
+
+# Keeps track of the resolved requests
+resolved_requests = 0
+
+# ------------- [ Other ] ---------------
+
+progress_bar = None
+terminal_width = shutil.get_terminal_size().columns
+equals_line = "=" * terminal_width
+
+# -------- [ ANSI Escape Codes ] --------
+
+RED = '\033[91m'
+DARK_RED = '\033[0;31m'
+GREEN = '\033[92m'
+YELLOW = '\033[93m'
+RESET = '\033[0m'
+GRAY = '\033[90m'
+BOLD = '\033[1m'
+GOLDEN = '\033[93m'
+UNDERLINE = '\033[4m'
+CYAN = '\033[96m'
+
 # ------- [ MongoDB Integration ] -------
 
 load_dotenv()
@@ -119,19 +150,23 @@ def format_time(seconds):
     return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
 
 def print_stats(_current_requests_delay):
-    global games_added_in_session, games_scanned_in_session
+    global games_added_in_session, games_scanned_in_session, errored_requests, recovered_requests, resolved_requests, lost_requests
     os.system('cls')
     elapsed_time = time.time() - start_time
     formatted_elapsed_time = format_time(elapsed_time)
-    print("===================================")
-    print(f"Ongoing requests: {unresolved_requests}")
-    print(f"Games added in session: {games_added_in_session:,} (Scanned {games_scanned_in_session:,})")
-    print(f"Running at: {round(games_scanned_in_session/elapsed_time, 3)} UIDs/s")
+    print(f"{GRAY}{equals_line}{RESET}")
+    print(f"Ongoing requests: {(unresolved_requests):,} | Closed requests: {(resolved_requests):,} (~{(unresolved_requests+resolved_requests):,})")
+    print(f"Games added in session: {games_added_in_session:,} out of {games_scanned_in_session:,}")
+    print(f"Running at: {round(games_scanned_in_session/elapsed_time, 3):,} UIDs/s --> {round(60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/min --> {round(60*60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/h --> {round(24*60*60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/d ==> {round(END_ID/max(24*60*60*(games_scanned_in_session/elapsed_time), 0.001))} days for all UIDs")
     print(f"Delay between new requests: {_current_requests_delay} seconds ({round(1/_current_requests_delay, 3)} reqs/s)")
     print(f"Session Elapsed Time: {formatted_elapsed_time} seconds")
+    print(f"Most recent errors ({len(errored_requests)}): {errored_requests[:3]}")
+    print(f"Most recent recoveries ({len(recovered_requests)}): {recovered_requests[:3]}")
+    print(f"Most recent losses ({len(lost_requests)}): {lost_requests[:3]}")
+    print(f"{GRAY}{equals_line}{RESET}")
 
 async def fetch_data(session, batch_start, batch_end, request_id):
-    global consecutive_no_rate_limit, current_requests_delay, unresolved_requests, games_added_in_session, games_scanned_in_session
+    global consecutive_no_rate_limit, current_requests_delay, unresolved_requests, games_added_in_session, games_scanned_in_session, errored_requests, resolved_requests, lost_requests
 
     unresolved_requests += 1
 
@@ -156,7 +191,7 @@ async def fetch_data(session, batch_start, batch_end, request_id):
 
         # Rate limit handling for v1/games and v1/votes endpoints
         if response.status_code == 503 or response.status_code == 429:
-            print(f"[_id{request_id}] Batch {batch_start:,}-{batch_end:,} got rate limited")
+            errored_requests.append(f"[_id{request_id}] Batch {batch_start:,}-{batch_end:,} got rate limited")
             # Penalize the script for getting rate limited
             current_requests_delay *= RATE_LIMIT_DELAY_PENALTY_MULTIPLIER
             consecutive_no_rate_limit = 0
@@ -193,10 +228,13 @@ async def fetch_data(session, batch_start, batch_end, request_id):
             
             if documents_to_insert: await collection.insert_many(documents_to_insert)
             unresolved_requests -= 1
+            resolved_requests += 1
+            if retry_counter > 0:
+                recovered_requests.append(f"[_id{request_id}] Recovered batch {batch_start:,}-{batch_end:,}")
             return
         # If the parsing fails retry
         except Exception as e:
-            print(f"[_id{request_id}] Failed to parse the response as JSON!")
+            errored_requests.append(f"[_id{request_id}] Failed to parse the response of batch {batch_start:,}-{batch_end:,}as JSON")
             print(e)
             retry_counter += 1
             await asyncio.sleep(current_requests_delay)
@@ -204,6 +242,8 @@ async def fetch_data(session, batch_start, batch_end, request_id):
     
     # All retries have failed
     unresolved_requests -= 1
+    resolved_requests += 1
+    lost_requests.append(f"[_id{request_id}] Lost batch {batch_start:,}-{batch_end:,} after {MAX_RETRIES} retries")
         
 async def main():
     global start_uid
@@ -212,12 +252,16 @@ async def main():
         request_id = 1
         current_requests_delay = INITIAL_REQUESTS_DELAY
 
+        last_print_time = time.time()
+
         while start_uid < END_ID:
             batch_end = min(start_uid + BATCH_SIZE, END_ID)
             asyncio.create_task(fetch_data(session, start_uid, batch_end, request_id))
             start_uid += BATCH_SIZE
             request_id += 1
-            print_stats(current_requests_delay)
+            if time.time() - last_print_time >= 1:
+                print_stats(current_requests_delay)
+                last_print_time = time.time()
             await asyncio.sleep(current_requests_delay)
 
 if __name__ == "__main__":
