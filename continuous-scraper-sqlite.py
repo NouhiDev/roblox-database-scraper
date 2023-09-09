@@ -205,7 +205,7 @@ def print_stats(_current_requests_delay):
     print(f"- Recovered failed requests: {len(recovered_requests)}{RESET}")
     print(f"- Lost requests: {len(lost_requests)}{RESET}")
     print(f"{GRAY}{equals_line}{RESET}")
-    print(f"{GRAY}{formatted_elapsed_time} | {round(1/_current_requests_delay, 3)} reqs/s | {consecutive_no_rate_limit} sCReqs | HTTPX {USE_HTTPX}{RESET}")
+    print(f"{GRAY}{formatted_elapsed_time} | {round(1/_current_requests_delay, 3)} reqs/s | {consecutive_no_rate_limit} sCReqs | HTTPX? {USE_HTTPX}{RESET}")
     print(f"{GRAY}{equals_line}{RESET}")
 
 async def fetch_data(session, batch_start, batch_end, request_id):
