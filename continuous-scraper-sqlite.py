@@ -65,7 +65,7 @@ MIN_RETRY_SLEEP_TIME = 1
 RANDOM_SLEEP_TIME_BOUNDS = (1, 10)
 
 # Whether to use httpx to make requests or aiohttp
-USE_HTTPX = False
+USE_HTTPX = True
 
 # Log Response Times
 LOG_RESPONSE_TIMES = False
@@ -259,7 +259,10 @@ async def fetch_data(session, batch_start, batch_end, request_id):
         
         # Try to parse the response as JSON
         try:
-            data = await response.json()
+            if USE_HTTPX:
+                data = response.json()
+            else:
+                data = await response.json()
 
             # Success !
 
