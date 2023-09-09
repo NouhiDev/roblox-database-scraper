@@ -65,7 +65,7 @@ MIN_RETRY_SLEEP_TIME = 1
 RANDOM_SLEEP_TIME_BOUNDS = (1, 10)
 
 # Whether to use httpx to make requests or aiohttp
-USE_HTTPX = True
+USE_HTTPX = False
 
 # Log Response Times
 LOG_RESPONSE_TIMES = False
@@ -205,7 +205,7 @@ def print_stats(_current_requests_delay):
     print(f"- Recovered failed requests: {len(recovered_requests)}{RESET}")
     print(f"- Lost requests: {len(lost_requests)}{RESET}")
     print(f"{GRAY}{equals_line}{RESET}")
-    print(f"{GRAY}{formatted_elapsed_time} | {round(1/_current_requests_delay, 3)} reqs/s | {consecutive_no_rate_limit} sCReqs{RESET}")
+    print(f"{GRAY}{formatted_elapsed_time} | {round(1/_current_requests_delay, 3)} reqs/s | {consecutive_no_rate_limit} sCReqs | HTTPX {USE_HTTPX}{RESET}")
     print(f"{GRAY}{equals_line}{RESET}")
 
 async def fetch_data(session, batch_start, batch_end, request_id):
