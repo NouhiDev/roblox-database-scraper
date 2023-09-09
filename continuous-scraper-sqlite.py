@@ -338,7 +338,16 @@ async def main():
         saved_progress = int(count_file.read().strip())
     if not saved_progress: saved_progress = 0
     start_uid = saved_progress
-    print(f"Starting continuous scraping at UID: {start_uid}")
+    print(f"{UNDERLINE}{CYAN}Starting continuous scraper:{RESET}")
+    print(f"{GRAY}- Targetting {BASE_URL}{RESET}")
+    print(f"{GRAY}  - with a batch size of {BATCH_SIZE} UIDs/Url{RESET}")
+    print(f"{GRAY}  - at the starting UID {start_uid:,}{RESET}")
+    if USE_HTTPX:
+        print(f"{GRAY}- Requesting using HTTPX{RESET}")
+    else:
+        print(f"{GRAY}- Requesting using AIOHTTP{RESET}")
+    print(f"{GRAY}  - with a cap of {MAX_CONCURRENT_OPEN_REQUESTS} open requests{RESET}")
+    print(f"{GRAY}- Desired delay between new requests {INITIAL_REQUESTS_DELAY} seconds ({round(1/INITIAL_REQUESTS_DELAY, 2)} reqs/s){RESET}")
 
     await asyncio.sleep(3)
 
