@@ -31,7 +31,7 @@ BASE_URL = "https://games.roblox.com/v1/games?universeIds="
 BATCH_SIZE = 100
 
 # Initial delay between requests (Default: 0.05 --> 20reqs/s)
-INITIAL_REQUESTS_DELAY = 0.06
+INITIAL_REQUESTS_DELAY = 0.07
 
 # Multiplier by which the delay will be multiplied with on rate limit error
 RATE_LIMIT_DELAY_PENALTY_INCREASE = 1.1
@@ -55,7 +55,7 @@ RETURN_DATA_MINIMUM_DELAY = 2
 MAX_RETRIES = 30
 
 # Concurrent open requests cap (Default: 2000)
-MAX_CONCURRENT_OPEN_REQUESTS = 2500
+MAX_CONCURRENT_OPEN_REQUESTS = 2000
 
 # Base for calculating the random retry time for each failed request
 MIN_RETRY_SLEEP_TIME = 1
@@ -68,6 +68,9 @@ DISPLAY_DEBUG_INFORMATION = False
 
 # Leave out calculations and unnecessary printing
 PERFORMANCE_MODE = False
+
+# Log Response Times
+LOG_RESPONSE_TIMES = False
 
 # -------- [ File Output Paths ] --------
 
@@ -107,8 +110,8 @@ lost_requests = []
 # Keeps track of the resolved requests
 resolved_requests = 0
 
-# Keeps track of the response times
-response_times = []
+# Accurate UIDs/s
+uids_per_second = 0
 
 # ------------- [ Other ] ---------------
 
@@ -180,7 +183,7 @@ def get_progress():
     return (progress_bar, goal)
 
 def print_stats(_current_requests_delay):
-    global games_added_in_session, games_scanned_in_session, errored_requests, recovered_requests, resolved_requests, lost_requests, consecutive_no_rate_limit, start_uid
+    global games_added_in_session, games_scanned_in_session, errored_requests, recovered_requests, resolved_requests, lost_requests, consecutive_no_rate_limit, start_uid, uids_per_second
     os.system('cls')
     elapsed_time = time.perf_counter() - start_time
     formatted_elapsed_time = format_time(elapsed_time)
@@ -197,7 +200,7 @@ def print_stats(_current_requests_delay):
     print(f"Ongoing requests: {(unresolved_requests):,} {GRAY}(Closed requests: {(resolved_requests):,} | Total requests: {(unresolved_requests+resolved_requests):,}){RESET}")
     print(f"- Games added in session: {games_added_in_session:,} out of {games_scanned_in_session:,} scanned games\n")
     print(f"Average session speed: {UNDERLINE}{round(games_scanned_in_session/elapsed_time, 3):,} UIDs/s{RESET}{GRAY} > {round(60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/min > {round(60*60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/h > {round(24*60*60*(games_scanned_in_session/elapsed_time), 3):,} UIDs/d => {RESET}{round(END_ID/max(24*60*60*(games_scanned_in_session/elapsed_time), 0.001))}d for all")
-    print(f"- Average response time: {round(sum(response_times)/max(len(response_times), 0.0001), 3)} seconds")
+    print(f"- Received {uids_per_second} UIDs last second")
     print(f"- Delay between new requests: {_current_requests_delay} seconds")
     print(f"{GRAY}{equals_line}{RESET}")
     print(f"{DARK_RED}Errored connections: {len(errored_requests)}{RESET}")
@@ -208,7 +211,7 @@ def print_stats(_current_requests_delay):
     print(f"{GRAY}{equals_line}{RESET}")
 
 async def fetch_data(session, batch_start, batch_end, request_id):
-    global consecutive_no_rate_limit, current_requests_delay, unresolved_requests, games_added_in_session, games_scanned_in_session, errored_requests, resolved_requests, lost_requests
+    global consecutive_no_rate_limit, current_requests_delay, unresolved_requests, games_added_in_session, games_scanned_in_session, errored_requests, resolved_requests, lost_requests, uids_per_second
 
     unresolved_requests += 1
 
@@ -222,14 +225,13 @@ async def fetch_data(session, batch_start, batch_end, request_id):
         current_requests_delay = max(current_requests_delay / RATE_LIMIT_DELAY_PENALTY_DECREASE, INITIAL_REQUESTS_DELAY)
         consecutive_no_rate_limit = 0
 
-    response_time_start = time.perf_counter()
-
     while retry_counter < MAX_RETRIES:
         # Try to sent the HTTP request
         try:
+            timer = time.perf_counter()
             response = await session.get(url, timeout=360)
-            response_time = time.perf_counter() - response_time_start
-            response_times.append(response_time)
+            timer_end = time.perf_counter()
+            if LOG_RESPONSE_TIMES: print(f"Response time: {timer_end-timer} seconds")
         # HTTP request error handling
         except Exception as e:
             retry_counter += 1
@@ -264,6 +266,8 @@ async def fetch_data(session, batch_start, batch_end, request_id):
             documents_to_insert = []
 
             for entry in data["data"]:
+                uids_per_second += 1
+
                 uid = entry["id"]
                 place_id = entry["rootPlaceId"]
                 visits = entry["visits"]
@@ -315,7 +319,7 @@ async def fetch_data(session, batch_start, batch_end, request_id):
     if f"_id{request_id}" not in lost_requests: lost_requests.append(f"_id{request_id}")
         
 async def main():
-    global start_uid, errored_requests, recovered_requests, lost_requests, current_requests_delay, unresolved_requests, resolved_requests
+    global start_uid, errored_requests, recovered_requests, lost_requests, current_requests_delay, unresolved_requests, resolved_requests, uids_per_second, uids_per_second_smooth
 
     saved_progress = 0
     with open(COUNT_FILE_PATH, "r") as count_file:
@@ -336,7 +340,8 @@ async def main():
             if time.perf_counter() - last_print_time >= 1:
                 print_stats(current_requests_delay)
                 last_print_time = time.perf_counter()
-            
+                uids_per_second = 0
+
             if unresolved_requests < MAX_CONCURRENT_OPEN_REQUESTS:
                 batch_end = min(start_uid + BATCH_SIZE, END_ID)
                 asyncio.create_task(fetch_data(session, start_uid, batch_end, request_id))
