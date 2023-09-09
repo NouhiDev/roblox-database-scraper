@@ -6,6 +6,7 @@ import sqlite3
 import os
 import httpx
 import random
+import aiohttp
 
 '''
 
@@ -18,7 +19,7 @@ by nouhidev
 
 '''
 
-_VERSION = "0.0.1-continuous-sqlite"
+_VERSION = "0.0.2-continuous-sqlite"
 
 # ------- [ Scraping Parameters ] -------
 
@@ -28,7 +29,7 @@ _VERSION = "0.0.1-continuous-sqlite"
 BASE_URL = "https://games.roblox.com/v1/games?universeIds="
 
 # UIDs/Url (Default: 100)
-BATCH_SIZE = 100
+BATCH_SIZE = 80
 
 # Initial delay between requests (Default: 0.05 --> 20reqs/s)
 INITIAL_REQUESTS_DELAY = 0.07
@@ -63,11 +64,8 @@ MIN_RETRY_SLEEP_TIME = 1
 # A random number between these bounds will be added to the base sleeping time when retrying
 RANDOM_SLEEP_TIME_BOUNDS = (1, 10)
 
-# Display intensive debug information (WIP)
-DISPLAY_DEBUG_INFORMATION = False
-
-# Leave out calculations and unnecessary printing
-PERFORMANCE_MODE = False
+# Whether to use httpx to make requests or aiohttp
+USE_HTTPX = False
 
 # Log Response Times
 LOG_RESPONSE_TIMES = False
@@ -238,19 +236,30 @@ async def fetch_data(session, batch_start, batch_end, request_id):
             await asyncio.sleep(MIN_RETRY_SLEEP_TIME + random.uniform(RANDOM_SLEEP_TIME_BOUNDS[0], RANDOM_SLEEP_TIME_BOUNDS[1]))
             continue
 
-        # Rate limit handling for v1/games and v1/votes endpoints
-        if response.status_code == 503 or response.status_code == 429:
-            # Penalize the script for getting rate limited
-            current_requests_delay = min(current_requests_delay * RATE_LIMIT_DELAY_PENALTY_INCREASE, MAX_REQUESTS_DELAY)
-            consecutive_no_rate_limit = 0
-            retry_counter += 1
-            if f"_id{request_id}" not in errored_requests: errored_requests.append(f"_id{request_id}")
-            await asyncio.sleep(MIN_RETRY_SLEEP_TIME + random.uniform(RANDOM_SLEEP_TIME_BOUNDS[0], RANDOM_SLEEP_TIME_BOUNDS[1]))
-            continue
+        if USE_HTTPX:
+            # Rate limit handling for v1/games and v1/votes endpoints
+            if response.status_code == 503 or response.status_code == 429:
+                # Penalize the script for getting rate limited
+                current_requests_delay = min(current_requests_delay * RATE_LIMIT_DELAY_PENALTY_INCREASE, MAX_REQUESTS_DELAY)
+                consecutive_no_rate_limit = 0
+                retry_counter += 1
+                if f"_id{request_id}" not in errored_requests: errored_requests.append(f"_id{request_id}")
+                await asyncio.sleep(MIN_RETRY_SLEEP_TIME + random.uniform(RANDOM_SLEEP_TIME_BOUNDS[0], RANDOM_SLEEP_TIME_BOUNDS[1]))
+                continue
+        else:
+            # Rate limit handling for v1/games and v1/votes endpoints
+            if response.status == 503 or response.status == 429:
+                # Penalize the script for getting rate limited
+                current_requests_delay = min(current_requests_delay * RATE_LIMIT_DELAY_PENALTY_INCREASE, MAX_REQUESTS_DELAY)
+                consecutive_no_rate_limit = 0
+                retry_counter += 1
+                if f"_id{request_id}" not in errored_requests: errored_requests.append(f"_id{request_id}")
+                await asyncio.sleep(MIN_RETRY_SLEEP_TIME + random.uniform(RANDOM_SLEEP_TIME_BOUNDS[0], RANDOM_SLEEP_TIME_BOUNDS[1]))
+                continue
         
         # Try to parse the response as JSON
         try:
-            data = response.json()
+            data = await response.json()
 
             # Success !
 
@@ -330,24 +339,44 @@ async def main():
 
     await asyncio.sleep(3)
 
-    async with httpx.AsyncClient(http2=True, limits=httpx.Limits(max_connections=None, max_keepalive_connections=0)) as session:
-        request_id = 1
-        current_requests_delay = INITIAL_REQUESTS_DELAY
+    if USE_HTTPX:
+        async with httpx.AsyncClient(http2=True, limits=httpx.Limits(max_connections=None, max_keepalive_connections=0)) as session:
+            request_id = 1
+            current_requests_delay = INITIAL_REQUESTS_DELAY
 
-        last_print_time = time.perf_counter()
+            last_print_time = time.perf_counter()
 
-        while start_uid < END_ID:
-            if time.perf_counter() - last_print_time >= 1:
-                print_stats(current_requests_delay)
-                last_print_time = time.perf_counter()
-                uids_per_second = 0
+            while start_uid < END_ID:
+                if time.perf_counter() - last_print_time >= 1:
+                    print_stats(current_requests_delay)
+                    last_print_time = time.perf_counter()
+                    uids_per_second = 0
 
-            if unresolved_requests < MAX_CONCURRENT_OPEN_REQUESTS:
-                batch_end = min(start_uid + BATCH_SIZE, END_ID)
-                asyncio.create_task(fetch_data(session, start_uid, batch_end, request_id))
-                start_uid += BATCH_SIZE
-                request_id += 1
-            await asyncio.sleep(current_requests_delay)
+                if unresolved_requests < MAX_CONCURRENT_OPEN_REQUESTS:
+                    batch_end = min(start_uid + BATCH_SIZE, END_ID)
+                    asyncio.create_task(fetch_data(session, start_uid, batch_end, request_id))
+                    start_uid += BATCH_SIZE
+                    request_id += 1
+                await asyncio.sleep(current_requests_delay)
+    else:
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=0, limit_per_host=0, force_close=True)) as session:
+            request_id = 1
+            current_requests_delay = INITIAL_REQUESTS_DELAY
+
+            last_print_time = time.perf_counter()
+
+            while start_uid < END_ID:
+                if time.perf_counter() - last_print_time >= 1:
+                    print_stats(current_requests_delay)
+                    last_print_time = time.perf_counter()
+                    uids_per_second = 0
+
+                if unresolved_requests < MAX_CONCURRENT_OPEN_REQUESTS:
+                    batch_end = min(start_uid + BATCH_SIZE, END_ID)
+                    asyncio.create_task(fetch_data(session, start_uid, batch_end, request_id))
+                    start_uid += BATCH_SIZE
+                    request_id += 1
+                await asyncio.sleep(current_requests_delay)
 
 if __name__ == "__main__":
     asyncio.run(main())
